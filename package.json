@@ -1,0 +1,35 @@
+{
+  "name": "tokrepo-mcp-server",
+  "version": "1.0.2",
+  "description": "MCP server for TokRepo — search, browse, and install AI assets from any MCP client (Claude Code, Cursor, Codex, Gemini CLI).",
+  "mcpName": "io.github.tokrepo/mcp-server",
+  "bin": {
+    "tokrepo-mcp-server": "bin/server.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henu-wang/tokrepo-mcp-server.git"
+  },
+  "homepage": "https://tokrepo.com",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "tokrepo",
+    "ai-assets",
+    "claude",
+    "cursor",
+    "codex",
+    "gemini",
+    "skills",
+    "prompts",
+    "workflows",
+    "agent"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
