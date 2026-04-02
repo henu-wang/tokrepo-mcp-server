@@ -1,6 +1,6 @@
 {
   "name": "tokrepo-mcp-server",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server for TokRepo — search, browse, and install AI assets from any MCP client (Claude Code, Cursor, Codex, Gemini CLI).",
   "mcpName": "io.github.henu-wang/tokrepo-mcp-server",
   "bin": {
