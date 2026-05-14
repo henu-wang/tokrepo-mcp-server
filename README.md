@@ -43,7 +43,7 @@ Once connected, your AI assistant can:
 - **Safe Codex install** — dry-run by default; risky assets must be staged or explicitly approved
 - **Lifecycle control** — list, update, uninstall, and roll back managed Codex installs
 - **Project memory** — pair with `tokrepo init-agent --target all` so future agents know to call TokRepo during planning
-- **Discovery surfaces** — official MCP `server.json`, `.well-known`, `llms.txt`, and npm metadata are kept machine-readable for agents and registries
+- **Discovery surfaces** — official MCP `server.json`, A2A agent card, portable agent manifest, tool catalog, `.well-known`, `agents.txt`, `llms.txt`, and npm metadata are kept machine-readable for agents and registries
 - **Funnel visibility** — anonymous aggregate events show whether agents actually discover, plan, install, hand off, and push reusable assets
 
 ## Available Tools
@@ -84,7 +84,7 @@ Run this once in a project:
 npx tokrepo init-agent --target all
 ```
 
-It writes managed instructions to `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, Cursor rules, and `.mcp.json`. The rule is simple: during planning, when the agent sees a capability gap, it should call `tokrepo_discover` before inventing a one-off local tool. After a task, agents can run `tokrepo agent-handoff --json` to suggest reusable files for user-confirmed private publishing.
+It writes managed instructions to `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, Cursor rules, GitHub Copilot instructions, Cline rules, Windsurf rules, Roo rules, OpenHands microagents, Aider conventions, and `.mcp.json`. The rule is simple: during planning, when the agent sees a capability gap, it should call `tokrepo_discover` before inventing a one-off local tool. After a task, agents can run `tokrepo agent-handoff --json` to suggest reusable files for user-confirmed private publishing.
 
 ## Machine-Readable Listing
 
@@ -92,6 +92,10 @@ Registries and agents can discover this server through:
 
 - MCP server manifest: [tokrepo.com/.well-known/mcp/server.json](https://tokrepo.com/.well-known/mcp/server.json)
 - TokRepo manifest: [tokrepo.com/.well-known/tokrepo.json](https://tokrepo.com/.well-known/tokrepo.json)
+- Portable agent manifest: [tokrepo.com/.well-known/agent.json](https://tokrepo.com/.well-known/agent.json)
+- A2A agent card: [tokrepo.com/.well-known/agent-card.json](https://tokrepo.com/.well-known/agent-card.json)
+- Tool catalog: [tokrepo.com/.well-known/tool-catalog.json](https://tokrepo.com/.well-known/tool-catalog.json)
+- Agent text entry: [tokrepo.com/agents.txt](https://tokrepo.com/agents.txt)
 - Agent instructions: [tokrepo.com/agent-instructions/tokrepo.md](https://tokrepo.com/agent-instructions/tokrepo.md)
 - LLM crawler entry: [tokrepo.com/llms.txt](https://tokrepo.com/llms.txt)
 

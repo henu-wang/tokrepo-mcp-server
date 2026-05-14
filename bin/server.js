@@ -20,7 +20,7 @@ const API_BASE = process.env.TOKREPO_API || 'https://api.tokrepo.com';
 const TOKREPO_URL = 'https://tokrepo.com';
 const TOKREPO_TOKEN = process.env.TOKREPO_TOKEN || '';
 const TOKREPO_CLI = process.env.TOKREPO_CLI || '';
-const SERVER_VERSION = '2.8.0';
+const SERVER_VERSION = '2.9.0';
 
 // ─── MCP Protocol (JSON-RPC over stdio) ───
 
@@ -47,7 +47,7 @@ const TOOLS = [
         target: {
           type: 'string',
           description: 'Optional agent/runtime target. Use "any" for generic discovery.',
-          enum: ['any', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'windsurf', 'mcp_client'],
+          enum: ['any', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
           default: 'any',
         },
         environment: {
@@ -92,7 +92,7 @@ const TOOLS = [
         target: {
           type: 'string',
           description: 'Optional agent target filter. Use "any" or omit it for generic discovery.',
-          enum: ['any', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'windsurf', 'mcp_client'],
+          enum: ['any', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
         },
         kind: {
           type: 'string',
@@ -444,7 +444,85 @@ const EXPOSED_TOOL_NAMES = new Set([
   'tokrepo_push',
 ]);
 
-const EXPOSED_TOOLS = TOOLS.filter((tool) => EXPOSED_TOOL_NAMES.has(tool.name));
+const TOOL_ANNOTATIONS = {
+  tokrepo_discover: {
+    title: 'Discover reusable AI assets before inventing a one-off tool',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_search: {
+    title: 'Search reusable AI assets',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_detail: {
+    title: 'Read asset details and metadata',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_install_plan: {
+    title: 'Plan an install before any file write',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_codex_install: {
+    title: 'Dry-run, stage, or install an asset for Codex',
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  tokrepo_installed: {
+    title: 'List locally installed TokRepo assets',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  tokrepo_update: {
+    title: 'Dry-run or update installed TokRepo assets',
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  tokrepo_uninstall: {
+    title: 'Dry-run or uninstall a TokRepo-managed asset',
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  tokrepo_rollback: {
+    title: 'Dry-run or roll back a TokRepo install session',
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  tokrepo_push: {
+    title: 'Publish explicit reviewed files to TokRepo after confirmation',
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+};
+
+const EXPOSED_TOOLS = TOOLS
+  .filter((tool) => EXPOSED_TOOL_NAMES.has(tool.name))
+  .map((tool) => ({
+    ...tool,
+    annotations: TOOL_ANNOTATIONS[tool.name],
+  }));
 
 // ─── HTTP Helper ───
 

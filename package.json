@@ -1,6 +1,6 @@
 {
   "name": "tokrepo-mcp-server",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "description": "Agent-native MCP server for TokRepo — search, plan, safely install, and push AI assets from MCP clients.",
   "mcpName": "io.github.henu-wang/tokrepo-mcp-server",
   "bin": {
@@ -24,6 +24,10 @@
     "cursor",
     "codex",
     "gemini",
+    "copilot",
+    "cline",
+    "windsurf",
+    "openhands",
     "skills",
     "prompts",
     "workflows",
@@ -33,6 +37,8 @@
     "claude-code",
     "openai-codex",
     "mcp-registry",
+    "agent-manifest",
+    "a2a-agent-card",
     "tool-discovery",
     "llms-txt"
   ],
