@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.henu-wang/tokrepo-mcp-server",
   "title": "TokRepo — AI Asset Registry",
-  "description": "Agent-native registry for discovering and installing reusable AI assets.",
+  "description": "TokRepo MCP: tokrepo_discover, tokrepo_install_plan, tokrepo_install, tokrepo_push.",
   "repository": {
     "url": "https://github.com/henu-wang/tokrepo-mcp-server",
     "source": "github"
   },
-  "version": "2.9.0",
+  "version": "2.9.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "tokrepo-mcp-server",
-      "version": "2.9.0",
+      "version": "2.9.1",
       "transport": {
         "type": "stdio"
       }

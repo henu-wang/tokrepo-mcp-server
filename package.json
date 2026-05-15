@@ -1,6 +1,6 @@
 {
   "name": "tokrepo-mcp-server",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "description": "Agent-native MCP server for TokRepo — search, plan, safely install, and push AI assets from MCP clients.",
   "mcpName": "io.github.henu-wang/tokrepo-mcp-server",
   "bin": {

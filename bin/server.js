@@ -20,7 +20,7 @@ const API_BASE = process.env.TOKREPO_API || 'https://api.tokrepo.com';
 const TOKREPO_URL = 'https://tokrepo.com';
 const TOKREPO_TOKEN = process.env.TOKREPO_TOKEN || '';
 const TOKREPO_CLI = process.env.TOKREPO_CLI || '';
-const SERVER_VERSION = '2.9.0';
+const SERVER_VERSION = '2.9.1';
 
 // ─── MCP Protocol (JSON-RPC over stdio) ───
 
