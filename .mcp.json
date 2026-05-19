@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tokrepo": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tokrepo-mcp-server"
+      ]
+    }
+  }
+}
