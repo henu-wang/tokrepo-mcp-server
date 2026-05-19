@@ -58,8 +58,8 @@ Once connected, your AI assistant can:
 | `tokrepo_resolve_capability` | Resolve a capability gap into a selected asset, verification evidence, install plan, lifecycle contract, next MCP calls, and CLI fallbacks |
 | `tokrepo_search` | Search assets by keyword/tag with `agent_fit` ranking |
 | `tokrepo_detail` | Get full asset details by UUID |
-| `tokrepo_verify` | Verify trust, hashes, permissions, policy, evidence_bundle, SBOM-lite, and signature_evidence before activation |
 | `tokrepo_install_plan` | Get agent-native install plan v2 with rollback, evidence_bundle, SBOM-lite, and signature_evidence |
+| `tokrepo_verify` | Verify trust, hashes, permissions, policy, evidence_bundle, SBOM-lite, and signature_evidence before activation |
 | `tokrepo_codex_install` | Dry-run, stage, or install a Codex skill safely |
 | `tokrepo_installed` | List TokRepo-managed Codex installs |
 | `tokrepo_update` | Dry-run or update managed Codex installs |
