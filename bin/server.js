@@ -20,7 +20,8 @@ const API_BASE = process.env.TOKREPO_API || 'https://api.tokrepo.com';
 const TOKREPO_URL = 'https://tokrepo.com';
 const TOKREPO_TOKEN = process.env.TOKREPO_TOKEN || '';
 const TOKREPO_CLI = process.env.TOKREPO_CLI || '';
-const SERVER_VERSION = '2.9.1';
+const SERVER_VERSION = '2.14.1';
+const MIN_TRUST = Number(process.env.TOKREPO_MIN_TRUST || '0.6');
 
 // ─── MCP Protocol (JSON-RPC over stdio) ───
 
@@ -35,8 +36,32 @@ const CAPABILITIES = {
 
 const TOOLS = [
   {
+    name: 'tokrepo_session_init',
+    description: 'Call FIRST at session start (once). Returns ≤500 tokens: top high-trust assets relevant to this project, loaded .tokrepo/agent.json memory pointer, recent handoffs, and policy pack URL. Treat output as authoritative capability inventory for the session. [[tokrepo.session-init-first]]',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_hint: {
+          type: 'string',
+          description: 'Optional project signal (path basename, package.json name, or repo description) to bias the asset inventory.',
+        },
+        target: {
+          type: 'string',
+          description: 'Optional agent runtime target.',
+          enum: ['any', 'all', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
+          default: 'any',
+        },
+        compact: {
+          type: 'boolean',
+          description: 'Return ultra-compact (≤50 tok per item) per-candidate response. Default true.',
+          default: true,
+        },
+      },
+    },
+  },
+  {
     name: 'tokrepo_discover',
-    description: 'Planning-time capability discovery for agents. Call this during autonomous planning when the task may need a reusable skill, MCP config, prompt, script, workflow, or other AI asset. Returns structured candidates, fit signals, and next MCP calls.',
+    description: 'Planning-time capability discovery for agents. Call this during autonomous planning when the task may need a reusable skill, MCP config, prompt, script, workflow, or other AI asset. Returns structured candidates, fit signals, and next MCP calls. [[tokrepo.discover-before-build]]',
     inputSchema: {
       type: 'object',
       properties: {
@@ -46,8 +71,8 @@ const TOOLS = [
         },
         target: {
           type: 'string',
-          description: 'Optional agent/runtime target. Use "any" for generic discovery.',
-          enum: ['any', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
+          description: 'Optional agent/runtime target. Use "any" or "all" for generic cross-agent discovery.',
+          enum: ['any', 'all', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
           default: 'any',
         },
         environment: {
@@ -63,6 +88,60 @@ const TOOLS = [
         limit: {
           type: 'number',
           description: 'Max candidates (default 6, max 10)',
+          default: 6,
+        },
+      },
+      required: ['task'],
+    },
+  },
+  {
+    name: 'tokrepo_resolve_capability',
+    description: 'Resolve a planning-time capability gap into a selected TokRepo asset, verification evidence, and install plan. Use this as the default first action when the agent identifies a missing skill, MCP, prompt, script, workflow, or reusable capability. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: {
+          type: 'string',
+          description: 'The user goal, subtask, or capability gap the agent needs to solve.',
+        },
+        target: {
+          type: 'string',
+          description: 'Optional agent/runtime target. Use "any" or "all" for generic cross-agent resolution.',
+          enum: ['any', 'all', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
+          default: 'any',
+        },
+        environment: {
+          type: 'object',
+          description: 'Optional local environment signals, such as project_type, frameworks, language, can_run_shell, can_write_files, or browser_available.',
+          additionalProperties: true,
+        },
+        constraints: {
+          type: 'object',
+          description: 'Optional constraints such as kind, policy, risk, language, prefer_verified, or must_not_modify_files.',
+          additionalProperties: true,
+        },
+        kind: {
+          type: 'string',
+          description: 'Optional asset kind preference, e.g. skill, prompt, knowledge, mcp_config, script, workflow.',
+        },
+        policy: {
+          type: 'string',
+          description: 'Optional install policy preference.',
+          enum: ['allow', 'confirm', 'stage_only', 'deny'],
+        },
+        min_trust: {
+          type: 'number',
+          description: 'Minimum trust_score_v2 threshold before recommending direct use. Default 70.',
+          default: 70,
+        },
+        min_fit: {
+          type: 'number',
+          description: 'Minimum fit score threshold before recommending direct use. Default 70.',
+          default: 70,
+        },
+        limit: {
+          type: 'number',
+          description: 'Max discovery candidates (default 6, max 10).',
           default: 6,
         },
       },
@@ -91,8 +170,8 @@ const TOOLS = [
         },
         target: {
           type: 'string',
-          description: 'Optional agent target filter. Use "any" or omit it for generic discovery.',
-          enum: ['any', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
+          description: 'Optional agent target filter. Use "any", "all", or omit it for generic discovery.',
+          enum: ['any', 'all', 'codex', 'claude_code', 'gemini_cli', 'cursor', 'copilot', 'cline', 'windsurf', 'roo', 'openhands', 'aider', 'mcp_client'],
         },
         kind: {
           type: 'string',
@@ -137,7 +216,7 @@ const TOOLS = [
   },
   {
     name: 'tokrepo_install_plan',
-    description: 'Return an agent-native install plan v2 for a TokRepo asset. Use this before installing: it includes preconditions, actions, risk profile, policy decision, rollback, and post-install verification.',
+    description: 'Return an agent-native install plan v2 for a TokRepo asset. Use this before installing: it includes preconditions, actions, risk profile, policy decision, rollback, post-install verification, evidence_bundle, SBOM-lite, signature_evidence, and provenance_v2.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -150,6 +229,36 @@ const TOOLS = [
           description: 'Install target adapter. Codex is native; other adapters may return planned or staged contracts as they become available.',
           enum: ['codex', 'claude_code', 'gemini_cli'],
           default: 'codex',
+        },
+      },
+      required: ['uuid'],
+    },
+  },
+  {
+    name: 'tokrepo_verify',
+    description: 'Read-only asset trust verification for agents. Produces content hash, install plan hash, policy decision, permission envelope, trust_score_v2, evidence_bundle, SBOM-lite, signature_evidence, blockers, warnings, schemas, and safe next actions before activation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uuid: {
+          type: 'string',
+          description: 'Asset UUID, workflow URL slug, or workflow UUID from search/detail results. Ignored when offline=true.',
+        },
+        target: {
+          type: 'string',
+          description: 'Verification target adapter.',
+          enum: ['codex'],
+          default: 'codex',
+        },
+        strict: {
+          type: 'boolean',
+          description: 'When true, warnings fail the verification report.',
+          default: false,
+        },
+        offline: {
+          type: 'boolean',
+          description: 'Use the bundled offline fixture. Intended for agent/toolchain self-tests.',
+          default: false,
         },
       },
       required: ['uuid'],
@@ -311,6 +420,49 @@ const TOOLS = [
     },
   },
   {
+    name: 'tokrepo_handoff_plan',
+    description: 'Inspect local files after a task and return an agent handoff packaging plan with quality_gate, package_manifest, SBOM-lite, and provenance. This is read-only and never publishes automatically; use tokrepo_push only after human confirmation with explicit reviewed files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          description: 'Optional explicit local paths to inspect. Omit to scan common reusable agent asset files in the current project.',
+          items: { type: 'string' },
+        },
+        limit: {
+          type: 'number',
+          description: 'Max candidates to return (default 12, max 30).',
+          default: 12,
+        },
+      },
+    },
+  },
+  {
+    name: 'tokrepo_harvest',
+    description: 'Read-only post-task harvest. Inspect changed or explicit local files and produce private-by-default reusable asset package drafts with metadata, usage examples, risk notes, compatibility, and quality gates. Never publishes automatically.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          description: 'Optional explicit local paths to inspect. Omit to scan common reusable agent asset files.',
+          items: { type: 'string' },
+        },
+        changed: {
+          type: 'boolean',
+          description: 'When true, inspect git-changed files from the current repository.',
+          default: false,
+        },
+        limit: {
+          type: 'number',
+          description: 'Max drafts to return (default 12, max 30).',
+          default: 12,
+        },
+      },
+    },
+  },
+  {
     name: 'tokrepo_eval_agent',
     description: 'Run TokRepo agent-native evals through the CLI. Verifies filtered search, install-plan contracts, metadata quality reporting, Codex install verification, manifest state, and rollback using temporary local state.',
     inputSchema: {
@@ -432,21 +584,40 @@ const TOOLS = [
 ];
 
 const EXPOSED_TOOL_NAMES = new Set([
+  'tokrepo_session_init',
   'tokrepo_discover',
+  'tokrepo_resolve_capability',
   'tokrepo_search',
   'tokrepo_detail',
   'tokrepo_install_plan',
+  'tokrepo_verify',
   'tokrepo_codex_install',
   'tokrepo_installed',
   'tokrepo_update',
   'tokrepo_uninstall',
   'tokrepo_rollback',
+  'tokrepo_handoff_plan',
+  'tokrepo_harvest',
   'tokrepo_push',
 ]);
 
 const TOOL_ANNOTATIONS = {
+  tokrepo_session_init: {
+    title: 'Bootstrap the session capability inventory (call FIRST, once)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
   tokrepo_discover: {
     title: 'Discover reusable AI assets before inventing a one-off tool',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_resolve_capability: {
+    title: 'Resolve a capability gap into a verified asset and install plan',
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -468,6 +639,13 @@ const TOOL_ANNOTATIONS = {
   },
   tokrepo_install_plan: {
     title: 'Plan an install before any file write',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_verify: {
+    title: 'Verify asset trust, hashes, permissions, and policy before activation',
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -506,6 +684,20 @@ const TOOL_ANNOTATIONS = {
     readOnlyHint: false,
     destructiveHint: true,
     idempotentHint: false,
+    openWorldHint: false,
+  },
+  tokrepo_handoff_plan: {
+    title: 'Plan post-task handoff of reusable local work',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  tokrepo_harvest: {
+    title: 'Harvest reusable local work into private-by-default package drafts',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
     openWorldHint: false,
   },
   tokrepo_push: {
@@ -610,10 +802,15 @@ function telemetryDisabled() {
 
 function eventForTool(name, args = {}) {
   if (name === 'tokrepo_discover') return 'mcp_discover';
+  if (name === 'tokrepo_resolve_capability') return 'capability_resolve';
   if (name === 'tokrepo_search') return 'mcp_search';
   if (name === 'tokrepo_detail') return 'mcp_detail';
   if (name === 'tokrepo_install_plan') return 'install_plan';
+  if (name === 'tokrepo_verify') return 'verify_asset';
   if (name === 'tokrepo_codex_install') return args.dry_run === false ? 'install_apply' : 'install_dry_run';
+  if (name === 'tokrepo_rollback') return 'rollback_plan';
+  if (name === 'tokrepo_handoff_plan') return 'handoff_plan';
+  if (name === 'tokrepo_harvest') return 'harvest_plan';
   if (name === 'tokrepo_push') return 'push';
   return '';
 }
@@ -846,6 +1043,112 @@ function buildDiscoveryQuery(task, environment, constraints) {
   return compactText([...new Set(parts)].join(' '), 100);
 }
 
+function inferAgentCapabilityAnalysis(task, target = 'any', constraints = {}, environment = {}) {
+  const text = [
+    task,
+    constraints.kind,
+    constraints.policy,
+    environment.project_type,
+    environment.language,
+    ...asArray(environment.frameworks),
+  ].filter(Boolean).join(' ').toLowerCase();
+  const normalizeKind = (value) => String(value || '').toLowerCase().replace(/[-\s]+/g, '_');
+  const rules = [
+    {
+      name: 'domain_or_workflow_skill',
+      kind: 'skill',
+      evidence: ['skill', 'rule', 'guideline', 'review', 'audit', 'seo', 'design', 'frontend', 'backend', 'security', 'test', 'deploy', 'video', 'writing'],
+      why: 'The task likely benefits from reusable instructions, domain rules, or a repeatable agent workflow.',
+    },
+    {
+      name: 'agent_tool_or_mcp_integration',
+      kind: 'mcp_config',
+      evidence: ['mcp', 'tool', 'api', 'integration', 'github', 'browser', 'calendar', 'email', 'gmail', 'slack', 'notion', 'database', 'vercel'],
+      why: 'The task may require a callable tool surface instead of hand-written one-off glue code.',
+    },
+    {
+      name: 'automation_script',
+      kind: 'script',
+      evidence: ['script', 'cli', 'batch', 'cron', 'automation', 'generate', 'convert', 'migrate', 'lint', 'check'],
+      why: 'The task may reuse a tested script or command wrapper.',
+    },
+    {
+      name: 'prompt_or_reasoning_template',
+      kind: 'prompt',
+      evidence: ['prompt', 'copy', 'research', 'analysis', 'summarize', 'translate', 'plan', 'brainstorm'],
+      why: 'The task may reuse a prompt template or reasoning checklist.',
+    },
+    {
+      name: 'knowledge_or_policy_pack',
+      kind: 'knowledge',
+      evidence: ['policy', 'standard', 'compliance', 'docs', 'documentation', 'architecture', 'best practice', 'trust'],
+      why: 'The task may need reusable reference knowledge or policy constraints.',
+    },
+  ];
+  const inferred = [];
+  for (const rule of rules) {
+    const matches = rule.evidence.filter(term => text.includes(term));
+    if (constraints.kind && normalizeKind(constraints.kind) === normalizeKind(rule.kind)) matches.push(`requested kind ${rule.kind}`);
+    if (!matches.length) continue;
+    inferred.push({
+      name: rule.name,
+      asset_kind: rule.kind,
+      confidence: Math.min(0.95, 0.55 + matches.length * 0.08),
+      evidence: Array.from(new Set(matches)).slice(0, 6),
+      why: rule.why,
+    });
+  }
+  if (!inferred.length) {
+    inferred.push({
+      name: 'general_reusable_agent_capability',
+      asset_kind: constraints.kind || 'skill',
+      confidence: 0.5,
+      evidence: ['new task capability gap'],
+      why: 'Before creating local one-off work, the agent should check whether TokRepo already has a reusable asset.',
+    });
+  }
+  const preferredAssetKinds = Array.from(new Set([
+    constraints.kind,
+    ...inferred.map(item => item.asset_kind),
+    'skill',
+    'prompt',
+    'mcp_config',
+    'script',
+    'workflow',
+    'knowledge',
+  ].filter(Boolean))).slice(0, 6);
+  const taskTerms = extractSearchTerms(task, 6);
+  return {
+    schema_version: 1,
+    decision: 'discover_before_build',
+    target,
+    trigger: 'planning_time_capability_gap',
+    inferred_capabilities: inferred,
+    preferred_asset_kinds: preferredAssetKinds,
+    search_queries: Array.from(new Set([
+      buildDiscoveryQuery(task, environment, constraints),
+      compactText(taskTerms.slice(0, 4).join(' '), 100),
+      ...preferredAssetKinds.map(kind => compactText(`${taskTerms.slice(0, 3).join(' ')} ${kind}`, 100)),
+    ].filter(Boolean))).slice(0, 6),
+    required_mcp_sequence: [
+      'tokrepo_discover',
+      'tokrepo_detail',
+      'tokrepo_verify',
+      'tokrepo_install_plan',
+    ],
+    acceptance_criteria: [
+      'Do not require the human to browse the TokRepo GUI before discovery.',
+      'Use a candidate only when fit, policy, trust, and permission envelope match the active subtask.',
+      'Prefer dry-run or stage-only before writes, execution, secrets, network access, or global config changes.',
+      'After completing the task, run tokrepo agent-handoff --json to preserve reusable improvements.',
+    ],
+    empty_state_strategy: [
+      'Try broader capability terms from search_queries.',
+      'If still empty, build locally and package the reusable part with tokrepo agent-handoff.',
+    ],
+  };
+}
+
 function scoreDiscoveryCandidate(item, task, target, constraints = {}) {
   const metadata = itemAgentMetadata(item);
   const fit = itemAgentFit(item);
@@ -935,10 +1238,13 @@ function buildCandidate(item, target, ranking = {}) {
     ranking,
     next_mcp_calls: [
       { tool: 'tokrepo_detail', arguments: { uuid } },
+      { tool: 'tokrepo_verify', arguments: { uuid, target: planTarget } },
       { tool: 'tokrepo_install_plan', arguments: { uuid, target: planTarget } },
     ],
     commands: {
       inspect: `npx tokrepo detail ${uuid} --json`,
+      audit: `npx tokrepo audit ${uuid} --target ${planTarget} --json`,
+      verify: `npx tokrepo verify ${uuid} --target ${planTarget} --json`,
       dry_run_install: planTarget === 'codex'
         ? `npx tokrepo install ${uuid} --dry-run --json`
         : `npx tokrepo install ${uuid} --target ${planTarget} --dry-run --json`,
@@ -946,7 +1252,9 @@ function buildCandidate(item, target, ranking = {}) {
     agent_use_contract: [
       'Use only if the capability matches the current subtask.',
       'Call tokrepo_detail before install to inspect content and metadata.',
-      'Call tokrepo_install_plan and respect policy_decision before writing files.',
+      'Call tokrepo_verify to inspect hashes, permissions, trust_score_v2, evidence_bundle, SBOM-lite, signature_evidence, blockers, and warnings.',
+      'Call tokrepo audit if future agents need a persistent trust-history snapshot.',
+      'Call tokrepo_install_plan and respect policy_decision, evidence_bundle, SBOM-lite, signature_evidence, rollback, and verification steps before writing files.',
       'Prefer dry-run or stage-only when risk or fit is uncertain.',
       'After using it, verify the original task outcome and record failures.',
     ],
@@ -954,6 +1262,125 @@ function buildCandidate(item, target, ranking = {}) {
 }
 
 // ─── Tool Handlers ───
+
+async function fetchTrust(uuid) {
+  try {
+    const res = await apiGet(`/api/v1/tokenboard/trust/${encodeURIComponent(uuid)}`);
+    if (res.code === 200 && res.data) return res.data;
+  } catch (_) {}
+  return null;
+}
+
+function trustBlock(trustData, defaults = {}) {
+  if (!trustData) {
+    return {
+      score: null,
+      decision: 'unknown',
+      components: null,
+      signature_status: defaults.signature_status || 'unknown',
+      last_eval_date: defaults.last_eval_date || null,
+      algorithm: null,
+      computed_at: null,
+      note: 'Trust endpoint unreachable; activation requires explicit user approval.',
+    };
+  }
+  return {
+    score: trustData.trust_score_v2,
+    decision: trustData.decision || 'unknown',
+    components: trustData.components || null,
+    weights: trustData.weights || null,
+    signature_status: defaults.signature_status || 'unverified',
+    last_eval_date: trustData.computed_at || trustData.updated_at || null,
+    algorithm: trustData.algorithm || null,
+    computed_at: trustData.computed_at || null,
+  };
+}
+
+function trustGate(trust, minTrust = MIN_TRUST) {
+  if (trust?.score == null) return { gate: 'unknown', threshold: minTrust };
+  return {
+    gate: trust.score >= minTrust ? 'allow' : 'block',
+    threshold: minTrust,
+    delta: Number((trust.score - minTrust).toFixed(4)),
+  };
+}
+
+async function handleSessionInit(args) {
+  const projectHint = compactText(args.project_hint || '', 240);
+  const target = normalizeTarget(args.target || 'any');
+  const compact = args.compact !== false;
+  const queries = projectHint
+    ? [projectHint, projectHint.split(/\s+/).slice(0, 2).join(' ')]
+    : ['agent skill', 'mcp', 'codex skill'];
+  const items = [];
+  for (const q of queries) {
+    if (items.length >= 4) break;
+    const params = new URLSearchParams({
+      keyword: q,
+      page: '1',
+      page_size: '4',
+      sort_by: 'popular',
+    });
+    if (target && target !== 'any') params.set('target', target);
+    try {
+      const res = await apiGet(`/api/v1/tokenboard/workflows/list?${params}`);
+      if (res.code === 200) {
+        for (const item of (res.data?.list || res.data?.items || [])) {
+          if (items.find(i => i.uuid === item.uuid)) continue;
+          items.push(item);
+          if (items.length >= 4) break;
+        }
+      }
+    } catch (_) {}
+  }
+  const inventory = items.slice(0, 4).map(item => compact ? ({
+    uuid: item.uuid,
+    slug: item.url_slug || item.slug || null,
+    kind: item.kind || 'skill',
+    title: compactText(item.title, 60),
+    install: `tokrepo install ${item.uuid}`,
+    url: `${TOKREPO_URL}/workflows/${item.url_slug || item.uuid}`,
+  }) : ({
+    uuid: item.uuid,
+    title: item.title,
+    summary: compactText(item.description || '', 160),
+    tags: (item.tags || []).map(t => t.name || t.slug).slice(0, 4),
+    install: `tokrepo install ${item.uuid}`,
+  }));
+
+  const payload = {
+    schema_version: 1,
+    session_id: crypto.randomBytes(8).toString('hex'),
+    issued_at: new Date().toISOString(),
+    target,
+    project_hint: projectHint || null,
+    policy_pack: {
+      url: `${TOKREPO_URL}/policy-packs/default-agent-policy.json`,
+    },
+    trust_manifest_url: `${TOKREPO_URL}/.well-known/tokrepo-trust.json`,
+    min_trust: MIN_TRUST,
+    capability_inventory: inventory,
+    recent_handoffs_hint: `Call tokrepo agent-handoff --json after task to surface reusable artifacts.`,
+    project_memory: {
+      url_doc: 'Load .tokrepo/agent.json from the current working directory if present.',
+    },
+    mandatory_rules: [
+      '[[tokrepo.session-init-first]] this call was made — proceed to plan.',
+      '[[tokrepo.discover-before-build]] before writing reusable artifacts, call tokrepo_discover.',
+      '[[tokrepo.verify-before-install]] before any install, call tokrepo_verify + tokrepo_install_plan; honor trust_gate.',
+      '[[tokrepo.dry-run-before-apply]] lifecycle tools must stay dry_run=true until user confirms.',
+      '[[tokrepo.handoff-after-reusable]] after producing reusable artifacts, call tokrepo_handoff_plan.',
+      '[[tokrepo.private-default]] tokrepo_push defaults to private; public requires explicit per-push confirmation.',
+    ],
+    next_call_hint: 'Call tokrepo_discover with the user task to get scored candidates.',
+  };
+  return {
+    content: [{
+      type: 'text',
+      text: jsonText('TokRepo session bootstrap', payload),
+    }],
+  };
+}
 
 async function handleDiscover(args) {
   const task = compactText(args.task, 500);
@@ -1022,11 +1449,13 @@ async function handleDiscover(args) {
       environment,
       constraints,
     },
+    capability_analysis: inferAgentCapabilityAnalysis(task, target, constraints, environment),
     recommended_flow: [
       'During planning, call tokrepo_discover when the task exposes a capability gap.',
       'Rank candidates by fit, policy, trust, and whether the entrypoint matches the active agent runtime.',
       'Call tokrepo_detail for the top candidate before installation or use.',
-      'Call tokrepo_install_plan and respect policy_decision, rollback, and verification steps.',
+      'Call tokrepo audit if the chosen asset materially affects the task and future agents need a trust-history snapshot.',
+      'Call tokrepo_install_plan and respect policy_decision, evidence_bundle, SBOM-lite, signature_evidence, rollback, and verification steps.',
       'Dry-run or stage when the asset may write files, execute code, require secrets, or change global config.',
       'Use the installed capability only for the matching subtask, then verify the user goal.',
       'If the agent creates a reusable improvement, ask before publishing and use tokrepo_push with explicit files.',
@@ -1166,15 +1595,97 @@ async function handleInstall(args) {
 
 async function handleInstallPlan(args) {
   const { uuid, target = 'codex' } = args;
+  if (target === 'codex') {
+    try {
+      const { stdout, stderr } = await runTokrepoCli(['plan', uuid, '--target', target]);
+      let data;
+      try {
+        data = JSON.parse(stdout);
+      } catch {
+        data = { stdout, stderr };
+      }
+      const decision = planPolicyDecision(data);
+      const command = decision === 'allow'
+        ? `tokrepo install ${data.asset_uuid || uuid} --target ${target} --yes`
+        : `tokrepo install ${data.asset_uuid || uuid} --target ${target} --dry-run --json`;
+      const trustData = await fetchTrust(data.asset_uuid || uuid);
+      const trust = trustBlock(trustData, { signature_status: data.signature_status });
+      const gate = trustGate(trust);
+      data.trust = trust;
+      data.trust_gate = gate;
+      if (gate.gate === 'block') {
+        data.blockers = Array.isArray(data.blockers) ? data.blockers : [];
+        data.blockers.push({
+          code: 'TRUST_BELOW_THRESHOLD',
+          severity: 'high',
+          message: `trust_score ${trust.score ?? 'n/a'} < TOKREPO_MIN_TRUST (${MIN_TRUST}). Confirm with user before install.`,
+        });
+      }
+      const trustLine = trust.score != null
+        ? `Trust: ${trust.score.toFixed(3)} (${trust.decision}) gate=${gate.gate}`
+        : `Trust: unknown gate=${gate.gate}`;
+      return {
+        content: [{
+          type: 'text',
+          text: jsonText(`Install plan v${data.schema_version || 1} for ${data.asset_title || uuid}\n\nPolicy: ${decision} | ${trustLine}\nCLI: ${command}`, data),
+        }],
+      };
+    } catch {
+      // Fall back to the API plan below when the CLI is unavailable.
+    }
+  }
   const plan = await fetchInstallPlan(uuid, target);
   const decision = planPolicyDecision(plan);
   const command = decision === 'allow'
     ? `tokrepo install ${plan.asset_uuid || uuid} --target ${target} --yes`
     : `tokrepo install ${plan.asset_uuid || uuid} --target ${target} --dry-run --json`;
+  const trustData = await fetchTrust(plan.asset_uuid || uuid);
+  const trust = trustBlock(trustData, { signature_status: plan.signature_status });
+  const gate = trustGate(trust);
+  plan.trust = trust;
+  plan.trust_gate = gate;
+  if (gate.gate === 'block') {
+    plan.blockers = Array.isArray(plan.blockers) ? plan.blockers : [];
+    plan.blockers.push({
+      code: 'TRUST_BELOW_THRESHOLD',
+      severity: 'high',
+      message: `trust_score ${trust.score ?? 'n/a'} < TOKREPO_MIN_TRUST (${MIN_TRUST}). Confirm with user before install.`,
+    });
+  }
+  const trustLine = trust.score != null
+    ? `Trust: ${trust.score.toFixed(3)} (${trust.decision}) gate=${gate.gate}`
+    : `Trust: unknown gate=${gate.gate}`;
   return {
     content: [{
       type: 'text',
-      text: jsonText(`Install plan v${plan.schema_version || 1} for ${plan.asset_title || uuid}\n\nPolicy: ${decision}\nCLI: ${command}`, plan),
+      text: jsonText(`Install plan v${plan.schema_version || 1} for ${plan.asset_title || uuid}\n\nPolicy: ${decision} | ${trustLine}\nCLI: ${command}`, plan),
+    }],
+  };
+}
+
+async function handleVerify(args) {
+  const {
+    uuid = '00000000-0000-4000-8000-000000000001',
+    target = 'codex',
+    strict = false,
+    offline = false,
+  } = args || {};
+  const cliArgs = ['verify', uuid, '--target', target, '--json'];
+  if (strict) cliArgs.push('--strict');
+  if (offline) cliArgs.push('--offline');
+  const { stdout, stderr } = await runTokrepoCli(cliArgs);
+  let data;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    data = { stdout, stderr };
+  }
+  const status = data?.status || 'unknown';
+  return {
+    isError: status === 'fail',
+    content: [{
+      type: 'text',
+      text: jsonText(`TokRepo asset verification (${status})`, data),
     }],
   };
 }
@@ -1377,6 +1888,87 @@ async function handleRollback(args) {
   return { content: [{ type: 'text', text: jsonText(dry_run === false ? 'TokRepo Codex rollback result' : 'TokRepo Codex rollback dry-run', data) }] };
 }
 
+async function handleHandoffPlan(args) {
+  const { paths = [], limit = 12 } = args || {};
+  const cliArgs = ['agent-handoff', '--json', '--limit', String(Math.min(Math.max(Number(limit) || 12, 1), 30))];
+  for (const inputPath of asArray(paths)) {
+    if (inputPath) cliArgs.push(String(inputPath));
+  }
+  const { stdout, stderr } = await runTokrepoCli(cliArgs);
+  let data;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    data = { stdout, stderr };
+  }
+  return { content: [{ type: 'text', text: jsonText('TokRepo agent handoff plan', data) }] };
+}
+
+async function handleResolveCapability(args) {
+  const {
+    task = '',
+    target = args?.constraints?.target || 'any',
+    kind = args?.constraints?.kind || '',
+    policy = args?.constraints?.policy || '',
+    limit = 6,
+    min_trust = 70,
+    min_fit = 70,
+    offline = false,
+  } = args || {};
+  const taskText = compactText(task, 500);
+  if (!taskText) {
+    return { content: [{ type: 'text', text: 'Error: task is required.' }], isError: true };
+  }
+  const cliArgs = [
+    'resolve',
+    taskText,
+    '--json',
+    '--target',
+    String(target || 'any'),
+    '--limit',
+    String(Math.min(Math.max(Number(limit) || 6, 1), 10)),
+    '--min-trust',
+    String(Math.min(Math.max(Number(min_trust) || 70, 0), 100)),
+    '--min-fit',
+    String(Math.min(Math.max(Number(min_fit) || 70, 0), 100)),
+  ];
+  if (kind) cliArgs.push('--kind', String(kind));
+  if (policy) cliArgs.push('--policy', String(policy));
+  if (offline) cliArgs.push('--offline');
+
+  const { stdout, stderr } = await runTokrepoCli(cliArgs);
+  let data;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    data = { stdout, stderr };
+  }
+  return {
+    structuredContent: data,
+    content: [{ type: 'text', text: jsonText('TokRepo capability resolution', data) }],
+  };
+}
+
+async function handleHarvest(args) {
+  const { paths = [], changed = false, limit = 12 } = args || {};
+  const cliArgs = ['harvest', '--json', '--limit', String(Math.min(Math.max(Number(limit) || 12, 1), 30))];
+  if (changed) cliArgs.push('--changed');
+  for (const inputPath of asArray(paths)) {
+    if (inputPath) cliArgs.push(String(inputPath));
+  }
+  const { stdout, stderr } = await runTokrepoCli(cliArgs);
+  let data;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    data = { stdout, stderr };
+  }
+  return {
+    structuredContent: data,
+    content: [{ type: 'text', text: jsonText('TokRepo harvest report', data) }],
+  };
+}
+
 async function handleEvalAgent(args) {
   const { uuid = '', keyword = '' } = args || {};
   const cliArgs = ['eval-agent', '--json'];
@@ -1547,17 +2139,22 @@ async function handleRequest(msg) {
           };
         }
         switch (name) {
+          case 'tokrepo_session_init': result = await handleSessionInit(args || {}); break;
           case 'tokrepo_discover': result = await handleDiscover(args || {}); break;
+          case 'tokrepo_resolve_capability': result = await handleResolveCapability(args || {}); break;
           case 'tokrepo_search': result = await handleSearch(args || {}); break;
           case 'tokrepo_detail': result = await handleDetail(args || {}); break;
           case 'tokrepo_install': result = await handleInstall(args || {}); break;
           case 'tokrepo_install_plan': result = await handleInstallPlan(args || {}); break;
+          case 'tokrepo_verify': result = await handleVerify(args || {}); break;
           case 'tokrepo_codex_install': result = await handleCodexInstall(args || {}); break;
           case 'tokrepo_clone_plan': result = await handleClonePlan(args || {}); break;
           case 'tokrepo_installed': result = await handleInstalled(args || {}); break;
           case 'tokrepo_update': result = await handleUpdate(args || {}); break;
           case 'tokrepo_uninstall': result = await handleUninstall(args || {}); break;
           case 'tokrepo_rollback': result = await handleRollback(args || {}); break;
+          case 'tokrepo_handoff_plan': result = await handleHandoffPlan(args || {}); break;
+          case 'tokrepo_harvest': result = await handleHarvest(args || {}); break;
           case 'tokrepo_eval_agent': result = await handleEvalAgent(args || {}); break;
           case 'tokrepo_trending': result = await handleTrending(args || {}); break;
           case 'tokrepo_push': result = await handlePush(args || {}); break;

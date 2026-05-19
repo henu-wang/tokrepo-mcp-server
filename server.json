@@ -2,17 +2,45 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.henu-wang/tokrepo-mcp-server",
   "title": "TokRepo — AI Asset Registry",
-  "description": "TokRepo MCP: tokrepo_discover, tokrepo_install_plan, tokrepo_install, tokrepo_push.",
+  "description": "TokRepo MCP: resolve gaps, discover, verify, install-plan, harvest, and handoff AI assets.",
+  "websiteUrl": "https://tokrepo.com",
   "repository": {
     "url": "https://github.com/henu-wang/tokrepo-mcp-server",
     "source": "github"
   },
-  "version": "2.9.1",
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tools": [
+        "tokrepo_session_init",
+        "tokrepo_discover",
+        "tokrepo_resolve_capability",
+        "tokrepo_search",
+        "tokrepo_detail",
+        "tokrepo_verify",
+        "tokrepo_install_plan",
+        "tokrepo_codex_install",
+        "tokrepo_installed",
+        "tokrepo_update",
+        "tokrepo_uninstall",
+        "tokrepo_rollback",
+        "tokrepo_handoff_plan",
+        "tokrepo_harvest",
+        "tokrepo_push"
+      ],
+      "hostedEndpoint": "https://tokrepo.com/mcp",
+      "toolCatalog": "https://tokrepo.com/.well-known/tool-catalog.json",
+      "evidence_bundle": "https://tokrepo.com/schemas/agent-evidence-bundle.schema.json",
+      "quality_gate": "https://tokrepo.com/schemas/handoff-package.schema.json#/properties/quality_gate_summary",
+      "capabilityResolutionSchema": "https://tokrepo.com/schemas/capability-resolution.schema.json",
+      "harvestReportSchema": "https://tokrepo.com/schemas/harvest-report.schema.json"
+    }
+  },
+  "version": "2.14.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "tokrepo-mcp-server",
-      "version": "2.9.1",
+      "version": "2.14.1",
       "transport": {
         "type": "stdio"
       }
