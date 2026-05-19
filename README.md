@@ -1,6 +1,6 @@
 # TokRepo MCP Server
 
-> Search, browse, and install AI assets from [TokRepo](https://tokrepo.com) — the open registry for AI skills, prompts, MCP configs, scripts, and workflows.
+> Agent-native MCP server for TokRepo: session bootstrap, capability discovery, search/detail, trust verification, install planning, Codex staging, lifecycle inspection/update/uninstall/rollback, handoff/harvest planning, and human-confirmed publishing of reusable AI assets.
 
 [![npm](https://img.shields.io/npm/v/tokrepo-mcp-server)](https://www.npmjs.com/package/tokrepo-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -53,6 +53,7 @@ Once connected, your AI assistant can:
 
 | Tool | Description |
 |------|-------------|
+| `tokrepo_session_init` | Session bootstrap with high-trust assets, project memory pointer, recent handoffs, and policy pack URL |
 | `tokrepo_discover` | Planning-time capability discovery from a task, environment, and constraints |
 | `tokrepo_resolve_capability` | Resolve a capability gap into a selected asset, verification evidence, install plan, lifecycle contract, next MCP calls, and CLI fallbacks |
 | `tokrepo_search` | Search assets by keyword/tag with `agent_fit` ranking |
