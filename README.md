@@ -1,6 +1,6 @@
 # TokRepo MCP Server
 
-> TokRepo MCP: `tokrepo_discover`, `tokrepo_verify`, and `tokrepo_install_plan` for reusable AI assets.
+> Agent-native MCP server for TokRepo: session bootstrap, capability discovery, search/detail, trust verification, install planning, Codex staging, lifecycle inspection/update/uninstall/rollback, handoff/harvest planning, and human-confirmed publishing of reusable AI assets.
 
 [![npm](https://img.shields.io/npm/v/tokrepo-mcp-server)](https://www.npmjs.com/package/tokrepo-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -54,8 +54,8 @@ Once connected, your AI assistant can:
 | Tool | Description |
 |------|-------------|
 | `tokrepo_session_init` | Session bootstrap with high-trust assets, project memory pointer, recent handoffs, and policy pack URL |
-| `tokrepo_find_for_task` | Atomic find action for a concrete task; returns ranked assets, match reasons, install command, and URL |
 | `tokrepo_discover` | Planning-time capability discovery from a task, environment, and constraints |
+| `tokrepo_find_for_task` | Atomic find action for a concrete task; returns ranked assets, match reasons, install command, and URL |
 | `tokrepo_resolve_capability` | Resolve a capability gap into a selected asset, verification evidence, install plan, lifecycle contract, next MCP calls, and CLI fallbacks |
 | `tokrepo_search` | Search assets by keyword/tag with `agent_fit` ranking |
 | `tokrepo_detail` | Get full asset details by UUID |
