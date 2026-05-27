@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.henu-wang/tokrepo-mcp-server",
   "title": "TokRepo — AI Asset Registry",
-  "description": "Agent-native MCP server for TokRepo: session bootstrap, capability discovery, search/detail, trust verification, install planning, Codex staging, lifecycle inspection/update/uninstall/rollback, handoff/harvest planning, and human-confirmed publishing of reusable AI assets.",
+  "description": "TokRepo MCP: tokrepo_discover, tokrepo_verify, tokrepo_install_plan for reusable AI assets.",
   "websiteUrl": "https://tokrepo.com",
   "repository": {
     "url": "https://github.com/henu-wang/tokrepo-mcp-server",
@@ -13,9 +13,11 @@
       "tools": [
         "tokrepo_session_init",
         "tokrepo_discover",
+        "tokrepo_find_for_task",
         "tokrepo_resolve_capability",
         "tokrepo_search",
         "tokrepo_detail",
+        "tokrepo_edges",
         "tokrepo_install_plan",
         "tokrepo_verify",
         "tokrepo_codex_install",
@@ -35,12 +37,12 @@
       "harvestReportSchema": "https://tokrepo.com/schemas/harvest-report.schema.json"
     }
   },
-  "version": "2.14.1",
+  "version": "2.16.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "tokrepo-mcp-server",
-      "version": "2.14.1",
+      "version": "2.16.1",
       "transport": {
         "type": "stdio"
       }

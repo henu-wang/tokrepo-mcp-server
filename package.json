@@ -1,7 +1,7 @@
 {
   "name": "tokrepo-mcp-server",
-  "version": "2.14.1",
-  "description": "Agent-native MCP server for TokRepo: session bootstrap, capability discovery, search/detail, trust verification, install planning, Codex staging, lifecycle inspection/update/uninstall/rollback, handoff/harvest planning, and human-confirmed publishing of reusable AI assets.",
+  "version": "2.16.1",
+  "description": "Agent-native MCP server for TokRepo - discover, verify, plan, safely install, hand off, and push AI assets from MCP clients.",
   "mcpName": "io.github.henu-wang/tokrepo-mcp-server",
   "bin": {
     "tokrepo-mcp-server": "bin/server.js"

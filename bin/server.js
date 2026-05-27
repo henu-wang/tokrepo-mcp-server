@@ -20,7 +20,7 @@ const API_BASE = process.env.TOKREPO_API || 'https://api.tokrepo.com';
 const TOKREPO_URL = 'https://tokrepo.com';
 const TOKREPO_TOKEN = process.env.TOKREPO_TOKEN || '';
 const TOKREPO_CLI = process.env.TOKREPO_CLI || '';
-const SERVER_VERSION = '2.14.1';
+const SERVER_VERSION = '2.16.1';
 const MIN_TRUST = Number(process.env.TOKREPO_MIN_TRUST || '0.6');
 
 // ─── MCP Protocol (JSON-RPC over stdio) ───
@@ -57,6 +57,34 @@ const TOOLS = [
           default: true,
         },
       },
+    },
+  },
+  {
+    name: 'tokrepo_find_for_task',
+    description: 'ATOMIC ACTION 1 of 3 (find / install / harvest). Find a TokRepo asset for a concrete task. Returns top-N ranked public workflows + match_reasons + install_command + url, backed by /api/v1/tokenboard/agent/find_for_task and counted in the find_for_task funnel step. Use this as the first call when the agent has a task and wants to discover whether an existing asset already solves it. For a broader planning-time capability scan use tokrepo_discover; for the canonical find→install→harvest lifecycle this is the find entry point.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: {
+          type: 'string',
+          description: 'Free-text task description, e.g. "add Stripe webhook handler with idempotency".',
+        },
+        repo_context: {
+          type: 'object',
+          description: 'Optional repo signals: language, framework, existing_assets[].',
+          additionalProperties: true,
+        },
+        agent: {
+          type: 'string',
+          description: 'Optional agent identifier (claude_code, codex, cursor, cline, gemini_cli, copilot, windsurf, roo, openhands).',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max candidates (default 3, max 10).',
+          default: 3,
+        },
+      },
+      required: ['task'],
     },
   },
   {
@@ -216,7 +244,7 @@ const TOOLS = [
   },
   {
     name: 'tokrepo_install_plan',
-    description: 'Return an agent-native install plan v2 for a TokRepo asset. Use this before installing: it includes preconditions, actions, risk profile, policy decision, rollback, post-install verification, evidence_bundle, SBOM-lite, signature_evidence, and provenance_v2.',
+    description: 'STEP 1 of ATOMIC ACTION 2 (install safely into this repo). Returns an agent-native install plan v2 for a TokRepo asset: preconditions, actions, risk profile, policy decision, rollback, post-install verification, evidence_bundle, SBOM-lite, signature_evidence, and provenance_v2. MUST be called before tokrepo_verify → tokrepo_codex_install. If something fails downstream, use tokrepo_rollback as the escape.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -236,7 +264,7 @@ const TOOLS = [
   },
   {
     name: 'tokrepo_verify',
-    description: 'Read-only asset trust verification for agents. Produces content hash, install plan hash, policy decision, permission envelope, trust_score_v2, evidence_bundle, SBOM-lite, signature_evidence, blockers, warnings, schemas, and safe next actions before activation.',
+    description: 'STEP 2 of ATOMIC ACTION 2 (install safely into this repo). Read-only asset trust verification. Produces content hash, install plan hash, policy decision, permission envelope, trust_score_v2, evidence_bundle, SBOM-lite, signature_evidence, blockers, warnings, schemas, and safe next actions before activation. Call AFTER tokrepo_install_plan, BEFORE tokrepo_codex_install.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -266,7 +294,7 @@ const TOOLS = [
   },
   {
     name: 'tokrepo_codex_install',
-    description: 'Safely install a TokRepo asset into local Codex. Defaults to dry_run=true. To write files, set dry_run=false and confirm=true. Risky assets require stage=true or approve_risk=true.',
+    description: 'STEP 3 of ATOMIC ACTION 2 (install safely into this repo). Safely install a TokRepo asset into local Codex. Defaults to dry_run=true. To write files, set dry_run=false and confirm=true. Risky assets require stage=true or approve_risk=true. Always call tokrepo_install_plan + tokrepo_verify first. On any failure call tokrepo_rollback (STEP 4 — the escape).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -388,7 +416,7 @@ const TOOLS = [
   },
   {
     name: 'tokrepo_rollback',
-    description: 'Roll back a previous TokRepo Codex install session. Defaults to dry_run=true and last=true.',
+    description: 'STEP 4 of ATOMIC ACTION 2 (install safely into this repo) — the escape. Roll back a previous TokRepo Codex install session when verify/apply fails or the user rejects the result. Defaults to dry_run=true and last=true. The four-step install atomic action (plan → verify → apply → rollback) is contractually incomplete without this escape.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -440,7 +468,7 @@ const TOOLS = [
   },
   {
     name: 'tokrepo_harvest',
-    description: 'Read-only post-task harvest. Inspect changed or explicit local files and produce private-by-default reusable asset package drafts with metadata, usage examples, risk notes, compatibility, and quality gates. Never publishes automatically.',
+    description: 'ATOMIC ACTION 3 of 3 (harvest what this agent just created). Call at the END of every task that produced reusable artifacts. Inspects changed or explicit local files and produces private-by-default reusable asset package drafts with metadata, usage examples, risk notes, compatibility, and quality gates. Never publishes automatically — `tokrepo_push` is a separate user-gated call. Skipping harvest leaves valuable per-session work stranded; this is how the agent contributes back to the find pool.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -495,6 +523,33 @@ const TOOLS = [
           type: 'number',
           description: 'Max results (default 10)',
           default: 10,
+        },
+      },
+    },
+  },
+  {
+    name: 'tokrepo_edges',
+    description: 'Read the asset relationship graph for one asset. Returns inbound + outbound edges across requires (hard deps), extends (soft pairings), and co_used (behavior-derived co-installs). Use this BEFORE planning installs to discover related assets and avoid solo installs of assets that pair with others.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uuid: {
+          type: 'string',
+          description: 'Asset UUID. Either uuid or slug is required.',
+        },
+        slug: {
+          type: 'string',
+          description: 'Asset slug. Either uuid or slug is required.',
+        },
+        direction: {
+          type: 'string',
+          enum: ['out', 'in', 'both'],
+          description: 'out = this asset → other assets (deps); in = other assets → this asset (depended-on); both (default).',
+          default: 'both',
+        },
+        types: {
+          type: 'string',
+          description: 'Optional comma-separated edge_type filter, e.g. "requires,co_used". Omit for all types.',
         },
       },
     },
@@ -585,6 +640,7 @@ const TOOLS = [
 
 const EXPOSED_TOOL_NAMES = new Set([
   'tokrepo_session_init',
+  'tokrepo_find_for_task',
   'tokrepo_discover',
   'tokrepo_resolve_capability',
   'tokrepo_search',
@@ -598,12 +654,20 @@ const EXPOSED_TOOL_NAMES = new Set([
   'tokrepo_rollback',
   'tokrepo_handoff_plan',
   'tokrepo_harvest',
+  'tokrepo_edges',
   'tokrepo_push',
 ]);
 
 const TOOL_ANNOTATIONS = {
   tokrepo_session_init: {
     title: 'Bootstrap the session capability inventory (call FIRST, once)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_find_for_task: {
+    title: 'Find an asset for a task — atomic action 1 of 3 (find/install/harvest)',
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -632,6 +696,13 @@ const TOOL_ANNOTATIONS = {
   },
   tokrepo_detail: {
     title: 'Read asset details and metadata',
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+  tokrepo_edges: {
+    title: 'Walk the asset relationship graph (requires / extends / co_used)',
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -801,10 +872,12 @@ function telemetryDisabled() {
 }
 
 function eventForTool(name, args = {}) {
+  if (name === 'tokrepo_find_for_task') return 'find_for_task';
   if (name === 'tokrepo_discover') return 'mcp_discover';
   if (name === 'tokrepo_resolve_capability') return 'capability_resolve';
   if (name === 'tokrepo_search') return 'mcp_search';
   if (name === 'tokrepo_detail') return 'mcp_detail';
+  if (name === 'tokrepo_edges') return 'mcp_search';
   if (name === 'tokrepo_install_plan') return 'install_plan';
   if (name === 'tokrepo_verify') return 'verify_asset';
   if (name === 'tokrepo_codex_install') return args.dry_run === false ? 'install_apply' : 'install_dry_run';
@@ -1018,6 +1091,257 @@ function candidateTargets(item, metadata) {
   return [...new Set(targets)];
 }
 
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return '';
+}
+
+function normalizedObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function itemRiskProfile(item, metadata) {
+  const risk = normalizedObject(firstPresent(
+    item.risk_profile,
+    item.riskProfile,
+    metadata.risk_profile,
+    metadata.riskProfile,
+  ));
+  return {
+    executes_code: Boolean(risk.executes_code ?? risk.executesCode),
+    modifies_global_config: Boolean(risk.modifies_global_config ?? risk.modifiesGlobalConfig),
+    requires_secrets: asArray(risk.requires_secrets || risk.requiresSecrets).map(secret => compactText(secret, 96)),
+    uses_absolute_paths: Boolean(risk.uses_absolute_paths ?? risk.usesAbsolutePaths),
+    network_access: Boolean(risk.network_access ?? risk.networkAccess),
+  };
+}
+
+function itemDependencies(item, metadata) {
+  const deps = normalizedObject(firstPresent(item.dependencies, metadata.dependencies));
+  return {
+    npm: asArray(deps.npm).map(dep => compactText(dep, 96)),
+    pip: asArray(deps.pip).map(dep => compactText(dep, 96)),
+    brew: asArray(deps.brew).map(dep => compactText(dep, 96)),
+    system: asArray(deps.system).map(dep => compactText(dep, 96)),
+  };
+}
+
+function itemVerification(item, metadata, plan = {}) {
+  const verification = normalizedObject(firstPresent(
+    item.verification,
+    metadata.verification,
+    plan.verification,
+  ));
+  return {
+    commands: asArray(verification.commands).map(command => compactText(command, 240)),
+    expected_files: [
+      ...asArray(verification.expected_files || verification.expectedFiles),
+      ...asArray(plan.post_verify || plan.postVerify).map(check => check?.path).filter(Boolean),
+    ].map(file => compactText(file, 240)),
+  };
+}
+
+function hasDeclaredRisk(item, metadata) {
+  return Boolean(item.risk_profile || item.riskProfile || metadata.risk_profile || metadata.riskProfile);
+}
+
+function hasAnyRisk(risk) {
+  return Boolean(
+    risk.executes_code ||
+    risk.modifies_global_config ||
+    risk.requires_secrets?.length ||
+    risk.uses_absolute_paths ||
+    risk.network_access
+  );
+}
+
+function agentEndpointUrls(displayId, target = 'codex', apiId = displayId) {
+  const encodedDisplay = encodeURIComponent(displayId || '');
+  const encodedApi = encodeURIComponent(apiId || displayId || '');
+  return {
+    human: displayId ? `${TOKREPO_URL}/en/workflows/${encodedDisplay}` : '',
+    raw: displayId ? `${TOKREPO_URL}/raw/${encodedDisplay}` : '',
+    metadata: displayId ? `${TOKREPO_URL}/metadata/${encodedDisplay}.json` : '',
+    install_plan: encodedApi ? `${API_BASE}/api/v1/tokenboard/workflows/install-plan?uuid=${encodedApi}&target=${encodeURIComponent(target)}` : '',
+    detail_api: encodedApi ? `${API_BASE}/api/v1/tokenboard/workflows/detail?uuid=${encodedApi}` : '',
+  };
+}
+
+function readinessComponent(name, score, max, evidence = [], status = '') {
+  const finalScore = Math.max(0, Math.min(max, Math.round(score)));
+  return {
+    name,
+    score: finalScore,
+    max,
+    status: status || (finalScore >= max ? 'pass' : finalScore > 0 ? 'warn' : 'block'),
+    evidence: asArray(evidence).map(item => compactText(item, 180)).filter(Boolean),
+  };
+}
+
+function buildAgentReadiness(input) {
+  const item = input.item || {};
+  const metadata = input.metadata || itemAgentMetadata(item);
+  const fit = input.fit || itemAgentFit(item);
+  const plan = input.plan || {};
+  const trust = normalizedObject(input.trust || item.trust || item.agent_trust || item.agentTrust);
+  const id = candidateUuid(item) || compactText(plan.asset_uuid || plan.assetUuid || input.id, 128);
+  const title = compactText(item.title || plan.asset_title || plan.assetTitle || '', 160);
+  const kind = candidateKind(item, metadata, fit) || compactText(plan.metadata?.asset_kind || plan.metadata?.assetKind || '', 64);
+  const targets = candidateTargets(item, metadata);
+  const installMode = compactText(firstPresent(
+    item.install_mode,
+    item.installMode,
+    metadata.install_mode,
+    metadata.installMode,
+    fit.install_mode,
+    fit.installMode,
+    plan.install_mode,
+    plan.installMode,
+  ), 64);
+  const entrypoint = compactText(firstPresent(
+    item.entrypoint,
+    metadata.entrypoint,
+    plan.entrypoint,
+  ), 160);
+  const policy = compactText(firstPresent(
+    fit.policy,
+    item.policy,
+    plan.policy_decision?.decision,
+    plan.policyDecision?.decision,
+  ), 64);
+  const contentHash = compactText(firstPresent(
+    item.content_hash,
+    item.contentHash,
+    metadata.content_hash,
+    metadata.contentHash,
+    plan.metadata?.content_hash,
+    plan.metadata?.contentHash,
+  ), 128);
+  const updatedAt = compactText(firstPresent(item.updated_at, item.updatedAt, plan.updated_at, plan.updatedAt), 64);
+  const version = compactText(firstPresent(item.version, metadata.version, plan.version), 64);
+  const risk = itemRiskProfile(item, metadata);
+  const verification = itemVerification(item, metadata, plan);
+  const hasPlan = Boolean(input.has_plan || plan.asset_uuid || plan.assetUuid || plan.actions?.length);
+
+  const components = [
+    readinessComponent('discoverable', id && title && kind ? 20 : id && title ? 14 : id ? 8 : 0, 20, [
+      id && `id:${id}`,
+      title && 'title',
+      kind && `asset_kind:${kind}`,
+    ]),
+    readinessComponent('readable', (entrypoint ? 8 : 0) + (contentHash ? 7 : 0), 15, [
+      entrypoint && `entrypoint:${entrypoint}`,
+      contentHash && 'content_hash',
+    ]),
+    readinessComponent('installable', (installMode ? 10 : 0) + (hasPlan ? 10 : 0), 20, [
+      installMode && `install_mode:${installMode}`,
+      hasPlan && 'install_plan',
+    ]),
+    readinessComponent('safe', policy === 'deny' ? 0 : (hasDeclaredRisk(item, metadata) ? 10 : 5) + (hasAnyRisk(risk) ? 5 : 10), 20, [
+      policy && `policy:${policy}`,
+      hasDeclaredRisk(item, metadata) ? 'risk_profile_declared' : 'risk_profile_inferred_or_missing',
+      hasAnyRisk(risk) ? 'risk_non_empty' : 'markdown_or_low_risk',
+      trust.score != null && `trust:${trust.score}`,
+    ], policy === 'deny' ? 'block' : ''),
+    readinessComponent('executable', verification.commands.length || verification.expected_files.length ? 15 : 0, 15, [
+      verification.commands.length && `${verification.commands.length} verify command(s)`,
+      verification.expected_files.length && `${verification.expected_files.length} expected file(s)`,
+    ]),
+    readinessComponent('maintained', (contentHash ? 5 : 0) + (updatedAt || version ? 5 : 0), 10, [
+      updatedAt && `updated:${updatedAt}`,
+      version && `version:${version}`,
+    ]),
+  ];
+  const score = components.reduce((sum, component) => sum + component.score, 0);
+  const blockers = [];
+  if (policy === 'deny') blockers.push('policy_denied');
+  if (!id) blockers.push('missing_stable_id');
+  if (!installMode) blockers.push('missing_install_mode');
+  const status = blockers.length
+    ? 'blocked'
+    : policy === 'stage_only'
+      ? 'stage_only'
+      : score >= 80
+        ? 'ready'
+        : score >= 60
+          ? 'review'
+          : 'incomplete';
+  return {
+    schema_version: 1,
+    score,
+    status,
+    policy: policy || 'unknown',
+    target_tools: targets,
+    components,
+    blockers,
+    next_action: status === 'ready'
+      ? 'call tokrepo_install_plan, then tokrepo_verify before any write'
+      : 'inspect detail, missing metadata, policy, and verification before install',
+  };
+}
+
+function buildAgentAssetContract(item, target = 'codex', options = {}) {
+  const metadata = options.metadata || itemAgentMetadata(item);
+  const fit = options.fit || itemAgentFit(item);
+  const plan = options.plan || {};
+  const id = candidateUuid(item) || compactText(plan.asset_uuid || plan.assetUuid || options.id, 128);
+  const slug = compactText(item.slug || item.url_slug || item.urlSlug || '', 180);
+  const urlId = slug || id;
+  const endpoints = agentEndpointUrls(urlId || id, target, id || urlId);
+  const risk = itemRiskProfile(item, metadata);
+  const verification = itemVerification(item, metadata, plan);
+  const readiness = buildAgentReadiness({ item, metadata, fit, plan, trust: options.trust, has_plan: options.has_plan });
+  const installMode = compactText(firstPresent(
+    item.install_mode,
+    item.installMode,
+    metadata.install_mode,
+    metadata.installMode,
+    fit.install_mode,
+    fit.installMode,
+    plan.install_mode,
+    plan.installMode,
+  ), 64);
+  const entrypoint = compactText(firstPresent(item.entrypoint, metadata.entrypoint, plan.entrypoint), 160);
+  return {
+    schema_version: 1,
+    id,
+    slug,
+    title: compactText(item.title || plan.asset_title || plan.assetTitle || '', 160),
+    description: compactText(item.description || item.summary || '', 320),
+    asset_kind: candidateKind(item, metadata, fit) || compactText(plan.metadata?.asset_kind || plan.metadata?.assetKind || '', 64),
+    target_tools: candidateTargets(item, metadata),
+    source: {
+      url: endpoints.human,
+      raw_url: endpoints.raw,
+      metadata_url: endpoints.metadata,
+      detail_api: endpoints.detail_api,
+      content_hash: compactText(firstPresent(item.content_hash, item.contentHash, metadata.content_hash, metadata.contentHash, plan.metadata?.content_hash, plan.metadata?.contentHash), 128),
+      version: compactText(firstPresent(item.version, metadata.version, plan.version), 64),
+      updated_at: compactText(firstPresent(item.updated_at, item.updatedAt, plan.updated_at, plan.updatedAt), 64),
+    },
+    capability: {
+      entrypoint,
+      install_mode: installMode,
+      policy: compactText(firstPresent(fit.policy, item.policy, plan.policy_decision?.decision, plan.policyDecision?.decision), 64),
+      agent_fit: fit,
+    },
+    risk,
+    dependencies: itemDependencies(item, metadata),
+    verification,
+    readiness,
+    lifecycle: {
+      inspect: { tool: 'tokrepo_detail', arguments: { uuid: id } },
+      verify: { tool: 'tokrepo_verify', arguments: { uuid: id, target } },
+      plan: { tool: 'tokrepo_install_plan', arguments: { uuid: id, target } },
+      dry_run_install: id ? `tokrepo install ${id} --target ${target} --dry-run --json` : '',
+      rollback: 'tokrepo_rollback after any failed write or activation',
+    },
+    install_plan_url: endpoints.install_plan,
+  };
+}
+
 function extractSearchTerms(value, maxTerms = 8) {
   const text = compactText(value, 240);
   const stopWords = new Set([
@@ -1214,6 +1538,11 @@ function buildCandidate(item, target, ranking = {}) {
   const urlSlug = compactText(item.slug || uuid, 180);
   const score = Number.isFinite(Number(fit.score)) ? Number(fit.score) : null;
   const why = asArray(fit.why).map(reason => compactText(reason, 160)).filter(Boolean);
+  const agentAssetContract = buildAgentAssetContract(item, planTarget, {
+    metadata,
+    fit,
+    has_plan: true,
+  });
 
   return {
     uuid,
@@ -1235,6 +1564,8 @@ function buildCandidate(item, target, ranking = {}) {
       policy: compactText(fit.policy || item.policy || '', 64),
       why,
     },
+    agent_readiness: agentAssetContract.readiness,
+    agent_asset_contract: agentAssetContract,
     ranking,
     next_mcp_calls: [
       { tool: 'tokrepo_detail', arguments: { uuid } },
@@ -1379,6 +1710,54 @@ async function handleSessionInit(args) {
       type: 'text',
       text: jsonText('TokRepo session bootstrap', payload),
     }],
+  };
+}
+
+async function handleFindForTask(args) {
+  const task = compactText(args.task, 500);
+  if (!task) {
+    return {
+      content: [{ type: 'text', text: 'task is required for tokrepo_find_for_task' }],
+      isError: true,
+    };
+  }
+
+  const limit = clampLimit(args.limit, 3, 10);
+  const body = { task, limit };
+  if (args.agent && typeof args.agent === 'string') body.agent = args.agent;
+  if (args.repo_context && typeof args.repo_context === 'object') body.repo_context = args.repo_context;
+
+  let res;
+  try {
+    res = await apiPost('/api/v1/tokenboard/agent/find_for_task', body, '');
+  } catch (e) {
+    return {
+      content: [{ type: 'text', text: `find_for_task failed: ${e.message}` }],
+      isError: true,
+    };
+  }
+
+  if (res.code !== 200) {
+    return {
+      content: [{ type: 'text', text: `find_for_task API code=${res.code} msg=${res.message || ''}` }],
+      isError: true,
+    };
+  }
+
+  const data = res.data || {};
+  const candidates = data.candidates || [];
+  const payload = {
+    atomic_action: 'find',
+    lifecycle_hint: 'After picking a candidate: tokrepo_install_plan → tokrepo_codex_install (dry_run first). After delivering the task: tokrepo_harvest.',
+    task,
+    task_keywords: data.task_keywords || [],
+    total_searched: data.total_searched || 0,
+    candidates,
+    notes: data.notes || [],
+  };
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
   };
 }
 
@@ -1530,23 +1909,33 @@ async function handleSearch(args) {
   }
 
   const items = res.data.list.slice(0, limit);
-  const lines = items.map((item, i) => {
+  const candidates = items.map(item => buildCandidate(
+    item,
+    normalizedTarget,
+    scoreDiscoveryCandidate(item, normalized, normalizedTarget, {}),
+  ));
+  const lines = candidates.map((candidate, i) => {
+    const item = items[i] || {};
     const tags = (item.tags || []).map(t => t.name || t.slug).join(', ');
     // Truncate description to keep agent context concise
-    let desc = item.description || '';
+    let desc = candidate.description || item.description || '';
     if (desc.length > 120) desc = desc.substring(0, 117) + '...';
     return [
-      `${i + 1}. **${item.title}**`,
+      `${i + 1}. **${candidate.title}**`,
       `   ${desc}`,
       `   Tags: ${tags || 'general'} | ★ ${item.vote_count || 0} | 👁 ${item.view_count || 0}`,
-      `   Plan: call \`tokrepo_install_plan\` with uuid \`${item.uuid}\``,
-      `   Install: \`tokrepo install ${item.uuid} --dry-run --json\``,
-      `   URL: ${TOKREPO_URL}/en/workflows/${item.uuid}`,
+      `   Agent Readiness: ${candidate.agent_readiness.score}/100 (${candidate.agent_readiness.status}) | kind=${candidate.capability.kind || 'unknown'} | policy=${candidate.fit.policy || 'unknown'}`,
+      `   Plan: call \`tokrepo_install_plan\` with uuid \`${candidate.uuid}\``,
+      `   Install: \`tokrepo install ${candidate.uuid} --dry-run --json\``,
+      `   URL: ${candidate.url}`,
     ].join('\n');
   });
 
   const text = `Found ${res.data.total} assets for "${query}" (showing ${items.length}):\n\n${lines.join('\n\n')}`;
-  return { content: [{ type: 'text', text }] };
+  return {
+    structuredContent: { candidates },
+    content: [{ type: 'text', text }],
+  };
 }
 
 async function handleDetail(args) {
@@ -1557,6 +1946,7 @@ async function handleDetail(args) {
   }
 
   const w = res.data.workflow;
+  const agentAssetContract = buildAgentAssetContract(w, 'codex', { has_plan: true });
   const tags = (w.tags || []).map(t => t.name || t.slug).join(', ');
   const steps = (w.steps || []).map((s, i) => {
     const content = s.prompt_template || s.description || '';
@@ -1571,13 +1961,22 @@ async function handleDetail(args) {
     `**Stars**: ${w.vote_count || 0} | **Views**: ${w.view_count || 0} | **Forks**: ${w.fork_count || 0}`,
     `**Author**: ${w.author_name || 'Anonymous'}`,
     `**URL**: ${TOKREPO_URL}/en/workflows/${w.uuid}`,
+    `**Agent Readiness**: ${agentAssetContract.readiness.score}/100 (${agentAssetContract.readiness.status})`,
     `**Plan**: call \`tokrepo_install_plan\` with uuid \`${w.uuid}\` before installing`,
     `**Install**: \`tokrepo install ${w.uuid} --dry-run --json\``,
+    ``,
+    jsonText('Agent asset contract', agentAssetContract),
     ``,
     steps,
   ].join('\n');
 
-  return { content: [{ type: 'text', text }] };
+  return {
+    structuredContent: {
+      agent_asset_contract: agentAssetContract,
+      agent_readiness: agentAssetContract.readiness,
+    },
+    content: [{ type: 'text', text }],
+  };
 }
 
 async function handleInstall(args) {
@@ -1621,10 +2020,24 @@ async function handleInstallPlan(args) {
           message: `trust_score ${trust.score ?? 'n/a'} < TOKREPO_MIN_TRUST (${MIN_TRUST}). Confirm with user before install.`,
         });
       }
+      data.agent_asset_contract = buildAgentAssetContract({}, target, {
+        id: data.asset_uuid || uuid,
+        plan: data,
+        metadata: data.metadata || {},
+        fit: data.agent_fit || {},
+        trust,
+        has_plan: true,
+      });
+      data.agent_readiness = data.agent_asset_contract.readiness;
       const trustLine = trust.score != null
         ? `Trust: ${trust.score.toFixed(3)} (${trust.decision}) gate=${gate.gate}`
         : `Trust: unknown gate=${gate.gate}`;
       return {
+        structuredContent: {
+          install_plan: data,
+          agent_asset_contract: data.agent_asset_contract,
+          agent_readiness: data.agent_readiness,
+        },
         content: [{
           type: 'text',
           text: jsonText(`Install plan v${data.schema_version || 1} for ${data.asset_title || uuid}\n\nPolicy: ${decision} | ${trustLine}\nCLI: ${command}`, data),
@@ -1652,10 +2065,24 @@ async function handleInstallPlan(args) {
       message: `trust_score ${trust.score ?? 'n/a'} < TOKREPO_MIN_TRUST (${MIN_TRUST}). Confirm with user before install.`,
     });
   }
+  plan.agent_asset_contract = buildAgentAssetContract({}, target, {
+    id: plan.asset_uuid || uuid,
+    plan,
+    metadata: plan.metadata || {},
+    fit: plan.agent_fit || {},
+    trust,
+    has_plan: true,
+  });
+  plan.agent_readiness = plan.agent_asset_contract.readiness;
   const trustLine = trust.score != null
     ? `Trust: ${trust.score.toFixed(3)} (${trust.decision}) gate=${gate.gate}`
     : `Trust: unknown gate=${gate.gate}`;
   return {
+    structuredContent: {
+      install_plan: plan,
+      agent_asset_contract: plan.agent_asset_contract,
+      agent_readiness: plan.agent_readiness,
+    },
     content: [{
       type: 'text',
       text: jsonText(`Install plan v${plan.schema_version || 1} for ${plan.asset_title || uuid}\n\nPolicy: ${decision} | ${trustLine}\nCLI: ${command}`, plan),
@@ -2007,6 +2434,50 @@ async function handleTrending(args) {
   return { content: [{ type: 'text', text }] };
 }
 
+// Walk the asset relationship graph for one asset. Surfaces requires/extends/co_used
+// neighbors so agents can discover related assets BEFORE planning installs.
+async function handleEdges(args) {
+  const { uuid = '', slug = '', direction = 'both', types = '' } = args || {};
+  if (!uuid && !slug) {
+    return { content: [{ type: 'text', text: 'tokrepo_edges: provide uuid or slug.' }] };
+  }
+  const params = new URLSearchParams();
+  if (uuid) params.set('uuid', uuid);
+  if (slug && !uuid) params.set('slug', slug);
+  if (direction && direction !== 'both') params.set('direction', direction);
+  if (types) params.set('types', types);
+
+  const res = await apiGet(`/api/v1/tokenboard/workflows/edges?${params}`);
+  if (res.code !== 200) {
+    return { content: [{ type: 'text', text: `tokrepo_edges error: ${res.message || 'unknown'}` }] };
+  }
+  const data = res.data || { outbound: [], inbound: [] };
+  const out = Array.isArray(data.outbound) ? data.outbound : [];
+  const inb = Array.isArray(data.inbound) ? data.inbound : [];
+
+  const fmtList = (label, list) => {
+    if (!list.length) return `${label}: (none)`;
+    const rows = list.slice(0, 20).map(e =>
+      `  • [${e.edge_type}/${e.source}] ${e.title || e.slug || e.uuid} — ${e.slug || e.uuid} (kind=${e.asset_kind || 'asset'}${e.weight ? `, w=${e.weight.toFixed(2)}` : ''})`,
+    );
+    return `${label} (${list.length}):\n${rows.join('\n')}`;
+  };
+
+  const summary = [
+    `Asset graph for ${uuid || slug}`,
+    fmtList('Outbound (this asset → others)', out),
+    fmtList('Inbound (others → this asset)', inb),
+    '',
+    'Edge types: requires (hard dep) · extends (soft pair) · co_used (behavior-derived).',
+    'Use tokrepo_detail / tokrepo_install_plan on each neighbor uuid/slug to drill in.',
+  ].join('\n');
+
+  return {
+    structuredContent: { outbound: out, inbound: inb },
+    content: [{ type: 'text', text: summary }],
+  };
+}
+
 async function handlePush(args) {
   const token = requireToken();
   const { title, files, description, tags, visibility = 1 } = args;
@@ -2140,10 +2611,12 @@ async function handleRequest(msg) {
         }
         switch (name) {
           case 'tokrepo_session_init': result = await handleSessionInit(args || {}); break;
+          case 'tokrepo_find_for_task': result = await handleFindForTask(args || {}); break;
           case 'tokrepo_discover': result = await handleDiscover(args || {}); break;
           case 'tokrepo_resolve_capability': result = await handleResolveCapability(args || {}); break;
           case 'tokrepo_search': result = await handleSearch(args || {}); break;
           case 'tokrepo_detail': result = await handleDetail(args || {}); break;
+          case 'tokrepo_edges': result = await handleEdges(args || {}); break;
           case 'tokrepo_install': result = await handleInstall(args || {}); break;
           case 'tokrepo_install_plan': result = await handleInstallPlan(args || {}); break;
           case 'tokrepo_verify': result = await handleVerify(args || {}); break;
@@ -2187,6 +2660,19 @@ function main() {
   const maybeExit = () => {
     if (inputEnded && pending === 0) process.exit(0);
   };
+  const writeJson = (payload) => new Promise((resolve, reject) => {
+    let line;
+    try {
+      line = JSON.stringify(payload) + '\n';
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    process.stdout.write(line, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 
   process.stdin.on('data', (chunk) => {
     buffer += chunk.toString();
@@ -2201,14 +2687,15 @@ function main() {
         pending++;
         handleRequest(msg).then((response) => {
           if (response) {
-            process.stdout.write(JSON.stringify(response) + '\n');
+            return writeJson(response);
           }
+          return undefined;
         }).catch((e) => {
-          process.stdout.write(JSON.stringify({
+          return writeJson({
             jsonrpc: '2.0',
             id: msg.id || null,
             error: { code: -32603, message: e.message },
-          }) + '\n');
+          });
         }).finally(() => {
           pending--;
           maybeExit();
